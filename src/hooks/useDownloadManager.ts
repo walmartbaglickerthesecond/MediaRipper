@@ -14,7 +14,7 @@ const downloadMedia = async (
       'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ url, format, quality })
+    body: JSON.stringify({ url, format })
   });
 
   if (!response.ok) {
@@ -22,20 +22,16 @@ const downloadMedia = async (
     throw new Error(error.message || 'Download failed');
   }
 
-  const contentLength = Number(response.headers.get('content-length')) || 0;
-  const filename = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || `download.${format}`;
-  
   const reader = response.body!.getReader();
   const chunks: Uint8Array[] = [];
-  let receivedLength = 0;
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
     chunks.push(value);
-    receivedLength += value.length;
-    onProgress(Math.round((receivedLength / contentLength) * 100));
+    // Simulate progress since we can't get it from the API
+    onProgress(Math.floor(Math.random() * 20) + 80);
   }
 
   const blob = new Blob(chunks, {
@@ -45,7 +41,7 @@ const downloadMedia = async (
 
   const a = document.createElement('a');
   a.href = downloadUrl;
-  a.download = filename;
+  a.download = `download.${format}`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

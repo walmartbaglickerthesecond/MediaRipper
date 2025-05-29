@@ -6,11 +6,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-const RAPID_API_KEY = Deno.env.get("RAPID_API_KEY");
+const RAPID_API_KEY = "0f12ff8b55msh2f77294e3660c5cp1029dbjsn94c775c004c1";
 const RAPID_API_HOST = "youtube-mp36.p.rapidapi.com";
 
 async function getDownloadUrl(videoUrl: string) {
-  // First, get the conversion ID
   const options = {
     method: 'GET',
     headers: {
@@ -47,10 +46,6 @@ Deno.serve(async (req) => {
 
     if (!url) {
       throw new Error("URL is required");
-    }
-
-    if (!RAPID_API_KEY) {
-      throw new Error("API key not configured");
     }
 
     // Get the download URL from Rapid API
