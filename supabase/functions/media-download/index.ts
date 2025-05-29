@@ -6,10 +6,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-const RAPID_API_KEY = "0f12ff8b55msh2f77294e3660c5cp1029dbjsn94c775c004c1";
+// Get API key from environment variable
+const RAPID_API_KEY = Deno.env.get("RAPID_API_KEY");
 const RAPID_API_HOST = "youtube-mp36.p.rapidapi.com";
 
 async function getDownloadUrl(videoUrl: string) {
+  if (!RAPID_API_KEY) {
+    throw new Error('RAPID_API_KEY environment variable is not set');
+  }
+
   const options = {
     method: 'GET',
     headers: {
@@ -18,22 +23,28 @@ async function getDownloadUrl(videoUrl: string) {
     }
   };
 
-  const response = await fetch(
-    `https://${RAPID_API_HOST}/dl?url=${encodeURIComponent(videoUrl)}`,
-    options
-  );
+  try {
+    const response = await fetch(
+      `https://${RAPID_API_HOST}/dl?url=${encodeURIComponent(videoUrl)}`,
+      options
+    );
 
-  if (!response.ok) {
-    throw new Error('Failed to initiate conversion');
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`API request failed: ${response.status} ${errorData.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.status === 'fail') {
+      throw new Error(data.msg || 'Conversion failed');
+    }
+
+    return data.link;
+  } catch (error) {
+    console.error('RapidAPI request failed:', error);
+    throw new Error(`Failed to get download URL: ${error.message}`);
   }
-
-  const data = await response.json();
-  
-  if (data.status === 'fail') {
-    throw new Error(data.msg || 'Conversion failed');
-  }
-
-  return data.link;
 }
 
 Deno.serve(async (req) => {
@@ -45,7 +56,13 @@ Deno.serve(async (req) => {
     const { url, format } = await req.json();
 
     if (!url) {
-      throw new Error("URL is required");
+      return new Response(
+        JSON.stringify({ error: "URL is required" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        }
+      );
     }
 
     // Get the download URL from Rapid API
@@ -71,7 +88,10 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error("Error:", error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: error.message,
+        details: error.stack
+      }),
       {
         status: 500,
         headers: {
