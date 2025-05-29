@@ -1,92 +1,60 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { download } from "https://deno.land/x/download@v2.0.2/mod.ts";
-import { join } from "https://deno.land/std@0.168.0/path/mod.ts";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { url, format, quality } = await req.json();
+    const { url } = await req.json();
 
     if (!url) {
       throw new Error("URL is required");
     }
 
-    // Create temporary directory
-    const tempDir = await Deno.makeTempDir();
-    const outputPath = join(tempDir, `output.${format}`);
-
-    // Prepare yt-dlp command
-    const qualityMap = {
-      low: format === 'mp3' ? '128K' : '480p',
-      medium: format === 'mp3' ? '192K' : '720p',
-      high: format === 'mp3' ? '320K' : '1080p'
-    };
-
-    const selectedQuality = qualityMap[quality as keyof typeof qualityMap];
-    
-    // Download yt-dlp binary
-    const ytDlpUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp";
-    const ytDlpPath = join(tempDir, "yt-dlp");
-    await download(ytDlpUrl, { file: ytDlpPath });
-    await Deno.chmod(ytDlpPath, 0o755);
-
-    // Prepare command arguments
-    const args = [
-      format === 'mp3' 
-        ? ['-x', '--audio-format', 'mp3', '--audio-quality', selectedQuality]
-        : ['-f', `bestvideo[height<=${selectedQuality.replace('p', '')}]+bestaudio/best[height<=${selectedQuality.replace('p', '')}]`],
-      '-o', outputPath,
-      url
-    ].flat();
-
-    // Execute yt-dlp
-    const process = new Deno.Command(ytDlpPath, { args });
-    const { success } = await process.output();
-
-    if (!success) {
-      throw new Error("Failed to download media");
+    // Validate URL
+    try {
+      new URL(url);
+    } catch {
+      throw new Error("Invalid URL provided");
     }
 
-    // Read the file
-    const file = await Deno.readFile(outputPath);
+    // Forward the request to the URL and stream the response
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch media: ${response.statusText}`);
+    }
 
-    // Clean up
-    await Deno.remove(tempDir, { recursive: true });
-
-    // Get content type
-    const contentType = format === 'mp3' ? 'audio/mpeg' : 'video/mp4';
-
-    // Extract filename from URL
+    // Get the content type from the response
+    const contentType = response.headers.get("content-type") || "application/octet-stream";
+    
+    // Extract filename from URL or use a default
     const urlObj = new URL(url);
-    const videoId = urlObj.searchParams.get('v') || urlObj.pathname.split('/').pop();
-    const filename = `${videoId}.${format}`;
+    const filename = urlObj.pathname.split("/").pop() || "download";
 
-    return new Response(file, {
+    return new Response(response.body, {
       headers: {
         ...corsHeaders,
-        'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Length': file.length.toString()
+        "Content-Type": contentType,
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Transfer-Encoding": "chunked"
       }
     });
+
   } catch (error) {
-    console.error('Error:', error);
+    console.error("Error:", error);
     return new Response(
       JSON.stringify({ error: error.message }),
       {
         status: 500,
         headers: {
           ...corsHeaders,
-          'Content-Type': 'application/json'
+          "Content-Type": "application/json"
         }
       }
     );
