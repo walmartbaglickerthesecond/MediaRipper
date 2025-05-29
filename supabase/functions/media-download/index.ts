@@ -1,13 +1,41 @@
 import { createClient } from "npm:@supabase/supabase-js@2.39.0";
-import { FFmpeg } from "npm:@ffmpeg/ffmpeg@0.12.7";
-import { fetchFile, toBlobURL } from "npm:@ffmpeg/util@0.12.1";
-import { load } from "npm:@ffmpeg/core@0.12.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
+
+const RAPID_API_KEY = Deno.env.get("RAPID_API_KEY");
+const RAPID_API_HOST = "youtube-mp36.p.rapidapi.com";
+
+async function getDownloadUrl(videoUrl: string) {
+  // First, get the conversion ID
+  const options = {
+    method: 'GET',
+    headers: {
+      'X-RapidAPI-Key': RAPID_API_KEY,
+      'X-RapidAPI-Host': RAPID_API_HOST
+    }
+  };
+
+  const response = await fetch(
+    `https://${RAPID_API_HOST}/dl?url=${encodeURIComponent(videoUrl)}`,
+    options
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to initiate conversion');
+  }
+
+  const data = await response.json();
+  
+  if (data.status === 'fail') {
+    throw new Error(data.msg || 'Conversion failed');
+  }
+
+  return data.link;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -21,72 +49,26 @@ Deno.serve(async (req) => {
       throw new Error("URL is required");
     }
 
-    // Validate URL
-    try {
-      new URL(url);
-    } catch {
-      throw new Error("Invalid URL provided");
+    if (!RAPID_API_KEY) {
+      throw new Error("API key not configured");
     }
 
-    // Fetch the media content
-    const response = await fetch(url);
+    // Get the download URL from Rapid API
+    const downloadUrl = await getDownloadUrl(url);
+
+    // Fetch the converted file
+    const response = await fetch(downloadUrl);
     
     if (!response.ok) {
-      throw new Error(`Failed to fetch media: ${response.statusText}`);
+      throw new Error('Failed to download converted file');
     }
 
-    // If MP3 conversion is requested
-    if (format === "mp3") {
-      const ffmpeg = new FFmpeg();
-      
-      // Load FFmpeg
-      await ffmpeg.load({
-        coreURL: await toBlobURL(
-          await load(),
-          "application/wasm"
-        )
-      });
-
-      // Get the input data
-      const inputData = await response.arrayBuffer();
-      const inputFileName = "input" + (response.headers.get("content-type")?.includes("audio") ? ".mp3" : ".mp4");
-      const outputFileName = "output.mp3";
-
-      // Write input file
-      await ffmpeg.writeFile(inputFileName, new Uint8Array(inputData));
-
-      // Run FFmpeg command
-      await ffmpeg.exec([
-        "-i", inputFileName,
-        "-vn", // Remove video
-        "-acodec", "libmp3lame",
-        "-ab", "192k",
-        "-ar", "44100",
-        "-y", // Overwrite output
-        outputFileName
-      ]);
-
-      // Read the output file
-      const outputData = await ffmpeg.readFile(outputFileName);
-
-      return new Response(outputData, {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "audio/mpeg",
-          "Content-Disposition": `attachment; filename="converted.mp3"`,
-        }
-      });
-    }
-
-    // For non-MP3 requests, stream the original content
-    const contentType = response.headers.get("content-type") || "application/octet-stream";
-    const filename = new URL(url).pathname.split("/").pop() || "download";
-
+    // Stream the response back to the client
     return new Response(response.body, {
       headers: {
         ...corsHeaders,
-        "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Type": format === "mp3" ? "audio/mpeg" : "video/mp4",
+        "Content-Disposition": `attachment; filename="download.${format}"`,
         "Transfer-Encoding": "chunked"
       }
     });
