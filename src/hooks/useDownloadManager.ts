@@ -20,6 +20,8 @@ const downloadMedia = async (
       throw new Error('Supabase configuration missing. Please set up your environment variables.');
     }
     
+    onProgress(20);
+    
     const response = await fetch(`${supabaseUrl}/functions/v1/media-download`, {
       method: 'POST',
       headers: {
@@ -28,6 +30,8 @@ const downloadMedia = async (
       },
       body: JSON.stringify({ url, format, quality })
     });
+
+    onProgress(30);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -43,7 +47,7 @@ const downloadMedia = async (
       throw new Error(errorMessage);
     }
 
-    onProgress(30);
+    onProgress(40);
 
     // Get the content length if available
     const contentLength = response.headers.get('content-length');
@@ -54,24 +58,28 @@ const downloadMedia = async (
       throw new Error('No response body received');
     }
     
+    onProgress(50);
+    
     const reader = response.body!.getReader();
     const chunks: Uint8Array[] = [];
     let received = 0;
 
+    let progressStep = 0;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
       chunks.push(value);
       received += value.length;
+      progressStep++;
       
       // Update progress based on bytes received
       if (total > 0) {
-        const progress = Math.min(30 + (received / total) * 60, 90);
+        const progress = Math.min(50 + (received / total) * 40, 90);
         onProgress(Math.floor(progress));
       } else {
         // Fallback progress simulation
-        const progress = Math.min(30 + (chunks.length * 2), 90);
+        const progress = Math.min(50 + Math.min(progressStep * 5, 40), 90);
         onProgress(progress);
       }
     }
@@ -89,6 +97,8 @@ const downloadMedia = async (
     if (blob.size === 0) {
       throw new Error('Downloaded file is empty');
     }
+    
+    onProgress(98);
     
     const downloadUrl = URL.createObjectURL(blob);
     const filename = `${title.replace(/[^a-zA-Z0-9\s]/g, '').trim() || 'download'}.${format}`;
