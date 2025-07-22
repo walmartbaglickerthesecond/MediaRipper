@@ -44,50 +44,89 @@ async function getVideoInfo(videoId: string) {
   }
 }
 
-// Use yt-dlp compatible approach for getting download URLs
+// Use Y2Mate API as alternative
 async function getDownloadUrl(videoId: string, format: string, quality: string) {
   try {
-    // Use Cobalt API with correct format
-    const apiUrl = `https://api.cobalt.tools/api/json`;
+    // Use Y2Mate API
+    const apiUrl = `https://www.y2mate.com/mates/analyzeV2/ajax`;
     
-    const requestBody = {
-      url: `https://www.youtube.com/watch?v=${videoId}`,
-      vCodec: "h264",
-      vQuality: quality === 'high' ? '1080' : quality === 'medium' ? '720' : '480',
-      aFormat: format === 'mp3' ? 'mp3' : 'best',
-      isAudioOnly: format === 'mp3',
-      isAudioMuted: false,
-      dubLang: false,
-      filenamePattern: "classic"
-    };
+    const formData = new FormData();
+    formData.append('k_query', `https://www.youtube.com/watch?v=${videoId}`);
+    formData.append('k_page', 'home');
+    formData.append('hl', 'en');
+    formData.append('q_auto', '0');
 
-    console.log('Sending request to Cobalt API:', JSON.stringify(requestBody, null, 2));
+    console.log('Sending request to Y2Mate API for video:', videoId);
 
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
+      body: formData
     });
 
-    console.log('Cobalt API response status:', response.status);
+    console.log('Y2Mate API response status:', response.status);
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Cobalt API error response:', errorText);
-      throw new Error(`Cobalt API request failed: ${response.status} - ${errorText}`);
+      console.error('Y2Mate API error response:', errorText);
+      throw new Error(`Y2Mate API request failed: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('Cobalt API response data:', JSON.stringify(data, null, 2));
+    console.log('Y2Mate API response data:', JSON.stringify(data, null, 2));
     
-    if (data.status === 'error' || !data.url) {
-      throw new Error(data.text || 'Download service error');
+    if (data.status !== 'ok' || !data.links) {
+      throw new Error(data.mess || 'Download service error');
     }
 
-    return data.url;
+    // Find the appropriate download link based on format and quality
+    let selectedLink = null;
+    
+    if (format === 'mp3') {
+      // Look for MP3 links
+      const mp3Links = data.links.mp3;
+      if (mp3Links) {
+        // Try to find the best quality MP3
+        const qualityMap = { 'high': '320', 'medium': '192', 'low': '128' };
+        const targetQuality = qualityMap[quality] || '192';
+        
+        selectedLink = mp3Links[targetQuality] || mp3Links['192'] || mp3Links['128'] || Object.values(mp3Links)[0];
+      }
+    } else {
+      // Look for MP4 links
+      const mp4Links = data.links.mp4;
+      if (mp4Links) {
+        const qualityMap = { 'high': '720', 'medium': '480', 'low': '360' };
+        const targetQuality = qualityMap[quality] || '480';
+        
+        selectedLink = mp4Links[targetQuality] || mp4Links['480'] || mp4Links['360'] || Object.values(mp4Links)[0];
+      }
+    }
+
+    if (!selectedLink || !selectedLink.k) {
+      throw new Error('No suitable download link found');
+    }
+
+    // Get the actual download URL
+    const convertFormData = new FormData();
+    convertFormData.append('vid', videoId);
+    convertFormData.append('k', selectedLink.k);
+
+    const convertResponse = await fetch('https://www.y2mate.com/mates/convertV2/index', {
+      method: 'POST',
+      body: convertFormData
+    });
+
+    if (!convertResponse.ok) {
+      throw new Error('Failed to get download URL');
+    }
+
+    const convertData = await convertResponse.json();
+    
+    if (convertData.status !== 'ok' || !convertData.dlink) {
+      throw new Error('Failed to generate download link');
+    }
+
+    return convertData.dlink;
   } catch (error) {
     console.error('Error getting download URL:', error);
     throw error;
