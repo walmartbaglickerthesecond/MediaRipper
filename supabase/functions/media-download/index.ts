@@ -50,19 +50,30 @@ async function getDownloadUrl(videoId: string, format: string, quality: string) 
     // Use a public YouTube download service API
     const apiUrl = `https://api.cobalt.tools/api/json`;
     
+    // Build request body based on format
+    const requestBody: any = {
+      url: `https://www.youtube.com/watch?v=${videoId}`,
+      isAudioOnly: format === 'mp3'
+    };
+
+    // Only add video-specific parameters for MP4 format
+    if (format === 'mp4') {
+      requestBody.vCodec = 'h264';
+      requestBody.vQuality = quality === 'high' ? '1080' : quality === 'medium' ? '720' : '480';
+    }
+
+    // Add audio format for MP3
+    if (format === 'mp3') {
+      requestBody.aFormat = 'mp3';
+    }
+
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
-      body: JSON.stringify({
-        url: `https://www.youtube.com/watch?v=${videoId}`,
-        vCodec: format === 'mp4' ? 'h264' : undefined,
-        vQuality: quality === 'high' ? '1080' : quality === 'medium' ? '720' : '480',
-        aFormat: format === 'mp3' ? 'mp3' : 'best',
-        isAudioOnly: format === 'mp3'
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
