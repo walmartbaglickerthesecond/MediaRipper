@@ -18,6 +18,7 @@ const FormatSelector: React.FC<FormatSelectorProps> = ({
       <label className="text-sm text-gray-400">Format</label>
       <div className="flex bg-gray-900 rounded-lg p-1">
         <button
+          title="Audio"
           className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md transition-all duration-300 ${
             format === 'mp3'
               ? 'bg-gray-800 text-purple-500 shadow-md'
@@ -31,6 +32,7 @@ const FormatSelector: React.FC<FormatSelectorProps> = ({
           <span>MP3</span>
         </button>
         <button
+          title="Video"
           className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md transition-all duration-300 ${
             format === 'mp4'
               ? 'bg-gray-800 text-blue-500 shadow-md'

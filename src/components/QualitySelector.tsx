@@ -5,16 +5,20 @@ interface QualitySelectorProps {
   quality: MediaQuality;
   onChange: (quality: MediaQuality) => void;
   disabled?: boolean;
+  format?: 'mp3' | 'mp4';
 }
 
 const QualitySelector: React.FC<QualitySelectorProps> = ({ 
   quality, 
   onChange,
-  disabled = false
+  disabled = false,
+  format = 'mp3'
 }) => {
+  const qualityLabel = format === 'mp3' ? 'Audio Quality' : 'Quality';
+
   return (
     <div className="flex flex-col gap-2 w-full">
-      <label className="text-sm text-gray-400">Quality</label>
+      <label className="text-sm text-gray-400">{qualityLabel}</label>
       <div className="grid grid-cols-3 bg-gray-900 rounded-lg p-1 gap-1">
         <button
           className={`flex items-center justify-center py-2 px-2 rounded-md transition-all duration-300 ${

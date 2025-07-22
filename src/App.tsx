@@ -118,6 +118,7 @@ function App() {
               <QualitySelector 
                 quality={formState.quality} 
                 onChange={handleQualityChange} 
+                format={formState.format}
               />
             </div>
           </div>
