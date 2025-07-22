@@ -65,7 +65,15 @@ const DownloadCard: React.FC<DownloadCardProps> = ({ item, onRemove }) => {
       <ProgressBar progress={item.progress} status={item.status} />
       
       {item.error && (
-        <p className="mt-2 text-xs text-red-400">{item.error}</p>
+        <div className="mt-2 p-2 bg-red-900/20 border border-red-800 rounded text-xs text-red-400">
+          <strong>Error:</strong> {item.error}
+        </div>
+      )}
+      
+      {item.status === 'completed' && (
+        <div className="mt-2 p-2 bg-green-900/20 border border-green-800 rounded text-xs text-green-400">
+          <strong>Success:</strong> Download completed successfully
+        </div>
       )}
       
       <div className="mt-3 text-right">
