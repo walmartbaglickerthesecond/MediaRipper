@@ -47,42 +47,43 @@ async function getVideoInfo(videoId: string) {
 // Use yt-dlp compatible approach for getting download URLs
 async function getDownloadUrl(videoId: string, format: string, quality: string) {
   try {
-    // Use a public YouTube download service API
+    // Use Cobalt API with correct format
     const apiUrl = `https://api.cobalt.tools/api/json`;
     
-    // Build request body based on format
-    const requestBody: any = {
+    const requestBody = {
       url: `https://www.youtube.com/watch?v=${videoId}`,
-      isAudioOnly: format === 'mp3'
+      vCodec: "h264",
+      vQuality: quality === 'high' ? '1080' : quality === 'medium' ? '720' : '480',
+      aFormat: format === 'mp3' ? 'mp3' : 'best',
+      isAudioOnly: format === 'mp3',
+      isAudioMuted: false,
+      dubLang: false,
+      filenamePattern: "classic"
     };
 
-    // Only add video-specific parameters for MP4 format
-    if (format === 'mp4') {
-      requestBody.vCodec = 'h264';
-      requestBody.vQuality = quality === 'high' ? '1080' : quality === 'medium' ? '720' : '480';
-    }
-
-    // Add audio format for MP3
-    if (format === 'mp3') {
-      requestBody.aFormat = 'mp3';
-    }
+    console.log('Sending request to Cobalt API:', JSON.stringify(requestBody, null, 2));
 
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify(requestBody)
     });
 
+    console.log('Cobalt API response status:', response.status);
+    
     if (!response.ok) {
-      throw new Error(`API request failed: ${response.status}`);
+      const errorText = await response.text();
+      console.error('Cobalt API error response:', errorText);
+      throw new Error(`Cobalt API request failed: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
+    console.log('Cobalt API response data:', JSON.stringify(data, null, 2));
     
-    if (data.status === 'error') {
+    if (data.status === 'error' || !data.url) {
       throw new Error(data.text || 'Download service error');
     }
 
