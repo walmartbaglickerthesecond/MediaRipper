@@ -82,11 +82,39 @@ async function tryYT1sAPI(videoId: string, format: string) {
       const links = format === 'mp3' ? analyzeData.links.mp3 : analyzeData.links.mp4;
       
       if (links) {
-        // Get the first available quality
+        // Map quality preference to actual available qualities
         const qualities = Object.keys(links);
+        console.log('Available qualities:', qualities);
+        
+        let selectedQuality;
+        
+        if (format === 'mp3') {
+          // For MP3, look for common bitrates
+          const qualityMap = {
+            'high': ['320', '256', '192', '128'],
+            'medium': ['192', '128', '320', '256'],
+            'low': ['128', '96', '64', '192', '256', '320']
+          };
+          
+          const preferredQualities = qualityMap[quality] || qualityMap['medium'];
+          selectedQuality = preferredQualities.find(q => qualities.includes(q)) || qualities[0];
+        } else {
+          // For MP4, look for common resolutions
+          const qualityMap = {
+            'high': ['1080', '720', '480', '360'],
+            'medium': ['720', '480', '360', '1080'],
+            'low': ['360', '480', '720', '1080']
+          };
+          
+          const preferredQualities = qualityMap[quality] || qualityMap['medium'];
+          selectedQuality = preferredQualities.find(q => qualities.includes(q)) || qualities[0];
+        }
+        
+        console.log('Selected quality:', selectedQuality);
+        
         if (qualities.length > 0) {
-          const selectedQuality = qualities[0];
           const linkData = links[selectedQuality];
+          console.log('Link data for selected quality:', linkData);
           
           if (linkData && linkData.k) {
             // Step 2: Get download link
@@ -163,10 +191,39 @@ async function tryY2mateAPI(videoId: string, format: string) {
         const links = format === 'mp3' ? analyzeData.links.mp3 : analyzeData.links.mp4;
         
         if (links) {
+          // Map quality preference to actual available qualities
           const qualities = Object.keys(links);
+          console.log('Y2mate available qualities:', qualities);
+          
+          let selectedQuality;
+          
+          if (format === 'mp3') {
+            // For MP3, look for common bitrates
+            const qualityMap = {
+              'high': ['320', '256', '192', '128'],
+              'medium': ['192', '128', '320', '256'],
+              'low': ['128', '96', '64', '192', '256', '320']
+            };
+            
+            const preferredQualities = qualityMap[quality] || qualityMap['medium'];
+            selectedQuality = preferredQualities.find(q => qualities.includes(q)) || qualities[0];
+          } else {
+            // For MP4, look for common resolutions
+            const qualityMap = {
+              'high': ['1080', '720', '480', '360'],
+              'medium': ['720', '480', '360', '1080'],
+              'low': ['360', '480', '720', '1080']
+            };
+            
+            const preferredQualities = qualityMap[quality] || qualityMap['medium'];
+            selectedQuality = preferredQualities.find(q => qualities.includes(q)) || qualities[0];
+          }
+          
+          console.log('Y2mate selected quality:', selectedQuality);
+          
           if (qualities.length > 0) {
-            const selectedQuality = qualities[0];
             const linkData = links[selectedQuality];
+            console.log('Y2mate link data for selected quality:', linkData);
             
             if (linkData && linkData.k) {
               // Step 2: Convert
