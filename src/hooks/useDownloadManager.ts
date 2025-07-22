@@ -12,10 +12,18 @@ const downloadMedia = async (
   try {
     onProgress(10);
     
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/media-download`, {
+    // Check if we have Supabase environment variables
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Supabase configuration missing. Please set up your environment variables.');
+    }
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/media-download`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'Authorization': `Bearer ${supabaseKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ url, format, quality })
@@ -41,6 +49,11 @@ const downloadMedia = async (
     const contentLength = response.headers.get('content-length');
     const total = contentLength ? parseInt(contentLength, 10) : 0;
     
+    // Check if response has a body
+    if (!response.body) {
+      throw new Error('No response body received');
+    }
+    
     const reader = response.body!.getReader();
     const chunks: Uint8Array[] = [];
     let received = 0;
@@ -65,9 +78,17 @@ const downloadMedia = async (
 
     onProgress(95);
 
+    if (chunks.length === 0) {
+      throw new Error('No data received from download service');
+    }
+    
     const blob = new Blob(chunks, {
       type: format === 'mp3' ? 'audio/mpeg' : 'video/mp4'
     });
+    
+    if (blob.size === 0) {
+      throw new Error('Downloaded file is empty');
+    }
     
     const downloadUrl = URL.createObjectURL(blob);
     const filename = `${title.replace(/[^a-zA-Z0-9\s]/g, '').trim() || 'download'}.${format}`;

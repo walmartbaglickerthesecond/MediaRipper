@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2.39.0";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,55 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-// YouTube video info extraction
-async function getVideoInfo(videoUrl: string) {
-  try {
-    // Extract video ID from URL
-    const videoId = extractVideoId(videoUrl);
-    if (!videoId) {
-      throw new Error('Invalid YouTube URL');
-    }
-
-    // Use YouTube's internal API to get video info
-    const infoUrl = `https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8`;
-    
-    const response = await fetch(infoUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        context: {
-          client: {
-            clientName: 'WEB',
-            clientVersion: '2.20230728.00.00'
-          }
-        },
-        videoId: videoId
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch video info');
-    }
-
-    const data = await response.json();
-    
-    if (!data.streamingData || !data.streamingData.adaptiveFormats) {
-      throw new Error('No streaming data available');
-    }
-
-    return {
-      title: data.videoDetails?.title || 'Unknown Title',
-      formats: data.streamingData.adaptiveFormats,
-      videoId: videoId
-    };
-  } catch (error) {
-    console.error('Error getting video info:', error);
-    throw error;
-  }
-}
-
+// Simple YouTube video ID extraction
 function extractVideoId(url: string): string | null {
   const patterns = [
     /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/,
@@ -68,77 +20,69 @@ function extractVideoId(url: string): string | null {
       return match[1];
     }
   }
-
   return null;
 }
 
-function getBestFormat(formats: any[], requestedFormat: string, quality: string) {
-  let filteredFormats;
-  
-  if (requestedFormat === 'mp3') {
-    // For audio, get audio-only streams
-    filteredFormats = formats.filter(f => 
-      f.mimeType && f.mimeType.includes('audio') && 
-      (f.mimeType.includes('mp4') || f.mimeType.includes('webm'))
-    );
-  } else {
-    // For video, get video streams with audio
-    filteredFormats = formats.filter(f => 
-      f.mimeType && f.mimeType.includes('video') && 
-      f.mimeType.includes('mp4') &&
-      f.audioChannels // Has audio
-    );
-  }
-
-  if (filteredFormats.length === 0) {
-    // Fallback to any available format
-    filteredFormats = formats.filter(f => f.url);
-  }
-
-  // Sort by quality
-  filteredFormats.sort((a, b) => {
-    const aQuality = parseInt(a.height || a.audioBitrate || '0');
-    const bQuality = parseInt(b.height || b.audioBitrate || '0');
-    
-    if (quality === 'high') {
-      return bQuality - aQuality; // Descending
-    } else if (quality === 'low') {
-      return aQuality - bQuality; // Ascending
-    } else {
-      // Medium quality - try to get something in the middle
-      const midPoint = Math.max(aQuality, bQuality) / 2;
-      return Math.abs(aQuality - midPoint) - Math.abs(bQuality - midPoint);
-    }
-  });
-
-  return filteredFormats[0];
-}
-
-async function downloadAndConvert(format: any, requestedFormat: string, title: string) {
+// Get video info using YouTube's oembed API
+async function getVideoInfo(videoId: string) {
   try {
-    const response = await fetch(format.url);
-    
+    const response = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
     if (!response.ok) {
-      throw new Error(`Failed to download: ${response.status}`);
+      throw new Error('Failed to fetch video info');
     }
-
-    // For now, we'll stream the original format
-    // In a production environment, you'd want to use FFmpeg for conversion
-    const contentType = requestedFormat === 'mp3' ? 'audio/mpeg' : 'video/mp4';
-    const filename = `${title.replace(/[^a-zA-Z0-9]/g, '_')}.${requestedFormat}`;
-
+    const data = await response.json();
     return {
-      stream: response.body,
-      contentType,
-      filename
+      title: data.title || 'YouTube Video',
+      thumbnail: data.thumbnail_url
     };
   } catch (error) {
-    console.error('Download error:', error);
+    console.error('Error fetching video info:', error);
+    return {
+      title: 'YouTube Video',
+      thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+    };
+  }
+}
+
+// Use yt-dlp compatible approach for getting download URLs
+async function getDownloadUrl(videoId: string, format: string, quality: string) {
+  try {
+    // Use a public YouTube download service API
+    const apiUrl = `https://api.cobalt.tools/api/json`;
+    
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        vCodec: format === 'mp4' ? 'h264' : undefined,
+        vQuality: quality === 'high' ? '1080' : quality === 'medium' ? '720' : '480',
+        aFormat: format === 'mp3' ? 'mp3' : 'best',
+        isAudioOnly: format === 'mp3'
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.status === 'error') {
+      throw new Error(data.text || 'Download service error');
+    }
+
+    return data.url;
+  } catch (error) {
+    console.error('Error getting download URL:', error);
     throw error;
   }
 }
 
-Deno.serve(async (req) => {
+serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -156,35 +100,54 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`Processing ${format} download for: ${url}`);
-
-    // Get video information and available formats
-    const videoInfo = await getVideoInfo(url);
-    
-    // Select the best format based on user preferences
-    const selectedFormat = getBestFormat(videoInfo.formats, format, quality);
-    
-    if (!selectedFormat) {
-      throw new Error('No suitable format found');
+    const videoId = extractVideoId(url);
+    if (!videoId) {
+      return new Response(
+        JSON.stringify({ error: "Invalid YouTube URL" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        }
+      );
     }
 
-    console.log(`Selected format: ${selectedFormat.mimeType}, Quality: ${selectedFormat.height || selectedFormat.audioBitrate}`);
+    console.log(`Processing ${format} download for video: ${videoId}`);
 
-    // Download and convert the video
-    const result = await downloadAndConvert(selectedFormat, format, videoInfo.title);
+    // Get video information
+    const videoInfo = await getVideoInfo(videoId);
+    
+    // Get download URL
+    const downloadUrl = await getDownloadUrl(videoId, format, quality);
+    
+    if (!downloadUrl) {
+      throw new Error('Could not get download URL');
+    }
 
-    // Return the stream with appropriate headers
-    return new Response(result.stream, {
+    console.log(`Got download URL for ${videoInfo.title}`);
+
+    // Fetch the actual video/audio file
+    const mediaResponse = await fetch(downloadUrl);
+    
+    if (!mediaResponse.ok) {
+      throw new Error(`Failed to download media: ${mediaResponse.status}`);
+    }
+
+    const contentType = format === 'mp3' ? 'audio/mpeg' : 'video/mp4';
+    const filename = `${videoInfo.title.replace(/[^a-zA-Z0-9\s]/g, '').trim()}.${format}`;
+
+    // Stream the response back to the client
+    return new Response(mediaResponse.body, {
       headers: {
         ...corsHeaders,
-        "Content-Type": result.contentType,
-        "Content-Disposition": `attachment; filename="${result.filename}"`,
+        "Content-Type": contentType,
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Length": mediaResponse.headers.get("Content-Length") || "",
         "Cache-Control": "no-cache",
       }
     });
 
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Download error:", error);
     return new Response(
       JSON.stringify({ 
         error: error.message || 'Download failed',
