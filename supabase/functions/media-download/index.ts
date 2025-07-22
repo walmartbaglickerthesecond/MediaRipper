@@ -46,59 +46,22 @@ async function getVideoInfo(videoId: string) {
   }
 }
 
-// Try multiple download services
-async function getDownloadUrl(videoId: string, format: string, quality: string) {
-  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  
-  // Try SaveTube API
+// Try YT1s.com API (working as of 2024)
+async function tryYT1sAPI(videoId: string, format: string) {
   try {
-    console.log('Trying SaveTube API...');
-    const response = await fetch('https://api.savetube.me/info', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      body: JSON.stringify({
-        url: videoUrl
-      })
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      console.log('SaveTube response:', data);
-      
-      if (data.data && data.data.video_formats) {
-        if (format === 'mp3' && data.data.audio_formats) {
-          // Find best audio format
-          const audioFormats = data.data.audio_formats;
-          const bestAudio = audioFormats.find((f: any) => f.format_id.includes('140')) || audioFormats[0];
-          if (bestAudio && bestAudio.url) {
-            return bestAudio.url;
-          }
-        } else if (format === 'mp4') {
-          // Find best video format
-          const videoFormats = data.data.video_formats;
-          const bestVideo = videoFormats.find((f: any) => f.format_id.includes('18')) || videoFormats[0];
-          if (bestVideo && bestVideo.url) {
-            return bestVideo.url;
-          }
-        }
-      }
-    }
-    console.log('SaveTube API failed with status:', response.status);
-  } catch (error) {
-    console.error('SaveTube failed:', error);
-  }
-
-  // Try YT5s API
-  try {
-    console.log('Trying YT5s API...');
-    const response = await fetch('https://yt5s.com/api/ajaxSearch/index', {
+    console.log('Trying YT1s API...');
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    
+    // Step 1: Analyze the video
+    const analyzeResponse = await fetch('https://yt1s.com/api/ajaxSearch/index', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': 'https://yt1s.com',
+        'Referer': 'https://yt1s.com/'
       },
       body: new URLSearchParams({
         q: videoUrl,
@@ -106,46 +69,172 @@ async function getDownloadUrl(videoId: string, format: string, quality: string) 
       })
     });
 
-    if (response.ok) {
-      const data = await response.json();
-      console.log('YT5s response:', data);
+    console.log('YT1s analyze response status:', analyzeResponse.status);
+    
+    if (!analyzeResponse.ok) {
+      throw new Error(`YT1s analyze failed: ${analyzeResponse.status}`);
+    }
+
+    const analyzeData = await analyzeResponse.json();
+    console.log('YT1s analyze data:', JSON.stringify(analyzeData, null, 2));
+
+    if (analyzeData.status === 'ok' && analyzeData.links) {
+      const links = format === 'mp3' ? analyzeData.links.mp3 : analyzeData.links.mp4;
       
-      if (data.links) {
-        const links = format === 'mp3' ? data.links.mp3 : data.links.mp4;
-        if (links && Object.keys(links).length > 0) {
-          const firstLink = Object.values(links)[0] as any;
-          if (firstLink && firstLink.url) {
-            return firstLink.url;
+      if (links) {
+        // Get the first available quality
+        const qualities = Object.keys(links);
+        if (qualities.length > 0) {
+          const selectedQuality = qualities[0];
+          const linkData = links[selectedQuality];
+          
+          if (linkData && linkData.k) {
+            // Step 2: Get download link
+            const convertResponse = await fetch('https://yt1s.com/api/ajaxConvert/convert', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Origin': 'https://yt1s.com',
+                'Referer': 'https://yt1s.com/'
+              },
+              body: new URLSearchParams({
+                vid: analyzeData.vid,
+                k: linkData.k
+              })
+            });
+
+            console.log('YT1s convert response status:', convertResponse.status);
+
+            if (convertResponse.ok) {
+              const convertData = await convertResponse.json();
+              console.log('YT1s convert data:', JSON.stringify(convertData, null, 2));
+              
+              if (convertData.status === 'ok' && convertData.dlink) {
+                return convertData.dlink;
+              }
+            }
           }
         }
       }
     }
-    console.log('YT5s API failed with status:', response.status);
+    
+    throw new Error('No download link found in YT1s response');
   } catch (error) {
-    console.error('YT5s failed:', error);
+    console.error('YT1s API failed:', error);
+    throw error;
+  }
+}
+
+// Try Y2mate.com API (alternative endpoint)
+async function tryY2mateAPI(videoId: string, format: string) {
+  try {
+    console.log('Trying Y2mate API...');
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    
+    // Step 1: Analyze
+    const analyzeResponse = await fetch('https://www.y2mate.com/mates/analyzeV2/ajax', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': 'https://www.y2mate.com',
+        'Referer': 'https://www.y2mate.com/'
+      },
+      body: new URLSearchParams({
+        k_query: videoUrl,
+        k_page: 'home',
+        hl: 'en',
+        q_auto: '0'
+      })
+    });
+
+    console.log('Y2mate analyze response status:', analyzeResponse.status);
+
+    if (analyzeResponse.ok) {
+      const analyzeData = await analyzeResponse.json();
+      console.log('Y2mate analyze data keys:', Object.keys(analyzeData));
+      
+      if (analyzeData.status === 'ok' && analyzeData.links) {
+        const links = format === 'mp3' ? analyzeData.links.mp3 : analyzeData.links.mp4;
+        
+        if (links) {
+          const qualities = Object.keys(links);
+          if (qualities.length > 0) {
+            const selectedQuality = qualities[0];
+            const linkData = links[selectedQuality];
+            
+            if (linkData && linkData.k) {
+              // Step 2: Convert
+              const convertResponse = await fetch('https://www.y2mate.com/mates/convertV2/index', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Accept': '*/*',
+                  'Accept-Language': 'en-US,en;q=0.9',
+                  'Origin': 'https://www.y2mate.com',
+                  'Referer': 'https://www.y2mate.com/'
+                },
+                body: new URLSearchParams({
+                  vid: analyzeData.vid,
+                  k: linkData.k
+                })
+              });
+
+              if (convertResponse.ok) {
+                const convertData = await convertResponse.json();
+                console.log('Y2mate convert data keys:', Object.keys(convertData));
+                
+                if (convertData.status === 'ok' && convertData.dlink) {
+                  return convertData.dlink;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    throw new Error('Y2mate API failed');
+  } catch (error) {
+    console.error('Y2mate API failed:', error);
+    throw error;
+  }
+}
+
+// Try multiple download services
+async function getDownloadUrl(videoId: string, format: string, quality: string) {
+  const errors: string[] = [];
+
+  // Try YT1s first
+  try {
+    const url = await tryYT1sAPI(videoId, format);
+    if (url) {
+      console.log('Successfully got download URL from YT1s');
+      return url;
+    }
+  } catch (error) {
+    errors.push(`YT1s: ${error.message}`);
   }
 
-  // Try a simple approach - return a demo file for testing
-  console.log('All APIs failed, creating demo response...');
-  
-  // Create a small demo audio/video file content for testing
-  if (format === 'mp3') {
-    // Return a minimal MP3 header (this won't play but will download as a file)
-    const mp3Header = new Uint8Array([
-      0xFF, 0xFB, 0x90, 0x00, // MP3 frame header
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    ]);
-    return URL.createObjectURL(new Blob([mp3Header], { type: 'audio/mpeg' }));
-  } else {
-    // Return a minimal MP4 header
-    const mp4Header = new Uint8Array([
-      0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, // ftyp box
-      0x69, 0x73, 0x6F, 0x6D, 0x00, 0x00, 0x02, 0x00,
-      0x69, 0x73, 0x6F, 0x6D, 0x69, 0x73, 0x6F, 0x32
-    ]);
-    return URL.createObjectURL(new Blob([mp4Header], { type: 'video/mp4' }));
+  // Try Y2mate as fallback
+  try {
+    const url = await tryY2mateAPI(videoId, format);
+    if (url) {
+      console.log('Successfully got download URL from Y2mate');
+      return url;
+    }
+  } catch (error) {
+    errors.push(`Y2mate: ${error.message}`);
   }
+
+  console.error('All download services failed:', errors);
+  throw new Error(`All download services failed: ${errors.join(', ')}`);
 }
 
 serve(async (req) => {
@@ -183,49 +272,89 @@ serve(async (req) => {
     const videoInfo = await getVideoInfo(videoId);
     console.log('Video info:', videoInfo);
 
-    // Try to get download URL
     try {
+      // Get download URL
       const downloadUrl = await getDownloadUrl(videoId, format, quality);
       console.log('Download URL obtained:', downloadUrl);
 
-      // Stream the actual media file
+      // Fetch the actual media file
       const mediaResponse = await fetch(downloadUrl, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': '*/*',
+          'Accept-Language': 'en-US,en;q=0.9'
         }
       });
 
+      console.log('Media response status:', mediaResponse.status);
+      console.log('Media response headers:', Object.fromEntries(mediaResponse.headers.entries()));
+
       if (!mediaResponse.ok) {
-        throw new Error(`Failed to fetch media: ${mediaResponse.status}`);
+        throw new Error(`Failed to fetch media: ${mediaResponse.status} ${mediaResponse.statusText}`);
       }
 
-      // Get the media content
-      const mediaContent = await mediaResponse.arrayBuffer();
-      
-      if (mediaContent.byteLength === 0) {
+      // Check if we have a body
+      if (!mediaResponse.body) {
+        throw new Error('No response body received');
+      }
+
+      // Get content length for progress tracking
+      const contentLength = mediaResponse.headers.get('content-length');
+      const totalSize = contentLength ? parseInt(contentLength, 10) : 0;
+
+      console.log(`Starting download, content length: ${totalSize} bytes`);
+
+      // Stream the content
+      const reader = mediaResponse.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let receivedLength = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        chunks.push(value);
+        receivedLength += value.length;
+        
+        if (totalSize > 0) {
+          const progress = (receivedLength / totalSize) * 100;
+          console.log(`Download progress: ${progress.toFixed(1)}%`);
+        }
+      }
+
+      console.log(`Download completed, total bytes: ${receivedLength}`);
+
+      if (receivedLength === 0) {
         throw new Error('Downloaded file is empty');
       }
 
-      console.log(`Successfully downloaded ${mediaContent.byteLength} bytes`);
+      // Create the final blob
+      const mediaBlob = new Uint8Array(receivedLength);
+      let offset = 0;
+      for (const chunk of chunks) {
+        mediaBlob.set(chunk, offset);
+        offset += chunk.length;
+      }
 
-      // Return the actual media file
-      return new Response(mediaContent, {
+      console.log(`Successfully processed ${mediaBlob.length} bytes`);
+
+      // Return the media file
+      return new Response(mediaBlob, {
         headers: {
           ...corsHeaders,
           'Content-Type': format === 'mp3' ? 'audio/mpeg' : 'video/mp4',
           'Content-Disposition': `attachment; filename="${videoInfo.title.replace(/[^a-zA-Z0-9\s]/g, '').trim() || 'download'}.${format}"`,
-          'Content-Length': mediaContent.byteLength.toString()
+          'Content-Length': mediaBlob.length.toString()
         }
       });
 
     } catch (downloadError) {
       console.error('Download failed:', downloadError);
       
-      // Return helpful error with alternatives
       return new Response(
         JSON.stringify({
-          error: "Download services are currently unavailable",
-          message: "YouTube frequently blocks download services. Please try these alternatives:",
+          error: "Download failed",
+          message: downloadError.message,
           videoInfo: {
             title: videoInfo.title,
             author: videoInfo.author,
@@ -233,11 +362,11 @@ serve(async (req) => {
             youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
             videoId: videoId
           },
-          alternatives: [
+          suggestions: [
+            "Try a different video - some videos may be restricted",
             "Use browser extensions like 'YouTube Video Downloader'",
-            "Try online services like yt1s.com, y2mate.com, or savefrom.net",
-            "Use desktop applications like 4K Video Downloader or yt-dlp",
-            "For audio only: Use Audacity to record system audio while playing the video"
+            "Try desktop applications like 4K Video Downloader or yt-dlp",
+            "Use online services like yt1s.com or y2mate.com directly"
           ]
         }),
         {
