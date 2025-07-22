@@ -145,6 +145,7 @@ async function getDownloadUrl(videoId: string, format: string, quality: string) 
       0x69, 0x73, 0x6F, 0x6D, 0x69, 0x73, 0x6F, 0x32
     ]);
     return URL.createObjectURL(new Blob([mp4Header], { type: 'video/mp4' }));
+  }
 }
 
 serve(async (req) => {
